@@ -1,37 +1,40 @@
 import * as THREE from 'three';
-import { World }        from './World.js';
+import { World }          from './World.js';
 import { Player, RemotePlayer } from './Player.js';
-import { GameCamera }   from './Camera.js';
-import { ItemsManager } from './Items.js';
-import { WORLDS, WORLD_ORDER, EV } from './constants.js';
+import { GameCamera }     from './Camera.js';
+import { ItemsManager }   from './Items.js';
+import { ParticleSystem } from './Particles.js';
+import { WORLDS, EV }     from './constants.js';
 
 export class GameEngine {
   constructor({ canvas, skinId, worldId, socket, onCollect, onWorldChange, onToast }) {
-    this.canvas       = canvas;
-    this.socket       = socket;
-    this.onCollect    = onCollect;
-    this.onWorldChange = onWorldChange;
-    this.onToast      = onToast;
-    this._collectedKeys = new Set();
-    this._remotePlayers = new Map();
-    this._raf = null;
-    this._t   = 0;
-    this._lastEmit = 0;
+    this.canvas          = canvas;
+    this.socket          = socket;
+    this.onCollect       = onCollect;
+    this.onWorldChange   = onWorldChange;
+    this.onToast         = onToast;
+    this._collectedKeys  = new Set();
+    this._remotePlayers  = new Map();
+    this._raf            = null;
+    this._t              = 0;
+    this._lastEmit       = 0;
 
-    // Three.js renderer
+    // ── Renderer ─────────────────────────────────────────────────────────────
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
-    this.renderer.toneMapping       = THREE.ACESFilmicToneMapping;
+    this.renderer.shadowMap.enabled   = true;
+    this.renderer.shadowMap.type      = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping         = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
 
-    this.scene   = new THREE.Scene();
-    this.camCtrl = new GameCamera(this.renderer);
-    this.world   = new World(this.scene);
-    this.items   = new ItemsManager(this.scene);
-    this.player  = new Player(this.scene, this.world, skinId);
+    // ── Scene objects ─────────────────────────────────────────────────────────
+    this.scene     = new THREE.Scene();
+    this.camCtrl   = new GameCamera(this.renderer);
+    this.world     = new World(this.scene);
+    this.items     = new ItemsManager(this.scene);
+    this.particles = new ParticleSystem(this.scene);
+    this.player    = new Player(this.scene, this.world, skinId);
 
     this._loadWorld(worldId);
     this._bindResize();
@@ -43,10 +46,10 @@ export class GameEngine {
     this._currentWorldId = worldId;
     this.world.load(worldId);
     this.items.load(worldId, this._collectedKeys);
+    this.particles.loadAmbient(worldId);
 
-    // Spawn player at center-ish non-wall tile
-    const w = WORLDS[worldId];
-    const map = w.tilemap;
+    // Spawn player at first open floor tile
+    const map = WORLDS[worldId].tilemap;
     for (let r = 1; r < map.length - 1; r++) {
       for (let c = 1; c < map[r].length - 1; c++) {
         if (map[r][c] === '0') {
@@ -87,7 +90,6 @@ export class GameEngine {
     });
 
     this.socket.on(EV.WORLD, (data) => {
-      // Another player changed world — remove their ghost from scene
       const rp = this._remotePlayers.get(data.id);
       if (rp && data.worldId !== this._currentWorldId) {
         rp.dispose();
@@ -96,12 +98,10 @@ export class GameEngine {
     });
 
     this.socket.on(EV.COLLECT, (data) => {
-      // Someone else collected an item — hide it locally too
       this.items.collect(data.itemKey);
       this._collectedKeys.add(data.itemKey);
     });
 
-    // Initial world state (collected items)
     this.socket.on(EV.STATE, (data) => {
       if (data.worldId === this._currentWorldId) {
         for (const key of data.collectedKeys || []) {
@@ -122,7 +122,7 @@ export class GameEngine {
 
   travelToWorld(worldId) {
     if (worldId === this._currentWorldId) return;
-    // Clear remote players
+
     for (const rp of this._remotePlayers.values()) rp.dispose();
     this._remotePlayers.clear();
 
@@ -140,20 +140,26 @@ export class GameEngine {
 
   _loop = () => {
     this._raf = requestAnimationFrame(this._loop);
-    this._t += 0.016;
+    const dt = 0.016;
+    this._t += dt;
 
+    // Update player
     this.player.update();
 
-    // Check item / portal proximity
+    // Item / portal proximity
     const px = this.player.position.x;
     const pz = this.player.position.z;
     const hit = this.items.checkProximity(px, pz);
     if (hit) {
       if (hit.type === 'item') {
-        const ok = this.items.collect(hit.key);
+        const pos = this.items.getItemPosition(hit.key);
+        const ok  = this.items.collect(hit.key);
         if (ok) {
           this._collectedKeys.add(hit.key);
-          const val = WORLDS[this._currentWorldId].itemValue;
+          const val   = WORLDS[this._currentWorldId].itemValue;
+          const color = WORLDS[this._currentWorldId].ic;
+          // Particle burst at item position
+          if (pos) this.particles.burst(pos.x, pos.y, pos.z, color);
           this.onCollect?.(hit.key, val);
           if (this.socket) this.socket.emit(EV.COLLECT, { itemKey: hit.key });
         }
@@ -163,16 +169,18 @@ export class GameEngine {
       }
     }
 
-    // Animate items
+    // Animate items, portal, lava, particles
     this.items.update(this._t);
+    this.world.animateLava(this._t);
+    this.particles.update(dt);
 
-    // Update remote players
+    // Remote players
     for (const rp of this._remotePlayers.values()) rp.update();
 
     // Camera
     this.camCtrl.follow(this.player.position);
 
-    // Emit position ~20 times/sec
+    // Emit position ~20×/sec
     const now = performance.now();
     if (this.socket && now - this._lastEmit > 50) {
       this._lastEmit = now;
@@ -191,6 +199,7 @@ export class GameEngine {
     this.player.dispose();
     this.world.clear();
     this.items.clear();
+    this.particles.dispose();
     for (const rp of this._remotePlayers.values()) rp.dispose();
     this._remotePlayers.clear();
     this.renderer.dispose();
