@@ -6,9 +6,10 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
 
 export function useSocket({ userId, username, skinId, worldId, enabled = true }) {
   const socketRef = useRef(null);
-  const [connected, setConnected]   = useState(false);
-  const [players,   setPlayers]     = useState({});
-  const [messages,  setMessages]    = useState([]);
+  const [connected,   setConnected]   = useState(false);
+  const [players,     setPlayers]     = useState({});
+  const [messages,    setMessages]    = useState([]);
+  const [playerCount, setPlayerCount] = useState(1);
 
   useEffect(() => {
     if (!enabled || !userId) return;
@@ -39,7 +40,6 @@ export function useSocket({ userId, username, skinId, worldId, enabled = true })
     });
 
     socket.on(EV.WORLD, (data) => {
-      // Player moved to another world — remove from current list
       setPlayers(prev => {
         if (prev[data.id]?.worldId === worldId && data.worldId !== worldId) {
           const next = { ...prev };
@@ -54,13 +54,16 @@ export function useSocket({ userId, username, skinId, worldId, enabled = true })
       setMessages(prev => [...prev.slice(-49), msg]);
     });
 
+    socket.on('server:stats', (data) => {
+      setPlayerCount(data.total || 1);
+    });
+
     return () => {
       socket.emit(EV.LEAVE, { id: socket.id });
       socket.disconnect();
       socketRef.current = null;
       setConnected(false);
     };
-  // We intentionally run once on mount with initial values
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, userId]);
 
@@ -69,5 +72,5 @@ export function useSocket({ userId, username, skinId, worldId, enabled = true })
     socketRef.current.emit(EV.CHAT, { id: socketRef.current.id, name: username, text, ts: Date.now() });
   };
 
-  return { socket: socketRef.current, connected, players, messages, sendChat };
+  return { socket: socketRef.current, connected, players, messages, sendChat, playerCount };
 }

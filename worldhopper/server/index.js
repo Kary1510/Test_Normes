@@ -50,6 +50,9 @@ io.on('connection', (socket) => {
     // Broadcast to others in same world
     socket.to(getRoomName(worldId)).emit(EV.JOIN, { id: socket.id, ...data });
 
+    // Broadcast updated player count to all
+    io.emit('server:stats', { total: io.sockets.size });
+
     console.log(`[~] ${socket.id} joined world ${worldId}`);
   });
 
@@ -110,6 +113,8 @@ io.on('connection', (socket) => {
       socket.to(getRoomName(p.worldId)).emit(EV.LEAVE, { id: socket.id });
     }
     removePlayer(socket.id);
+    // Broadcast updated player count after a short delay so socket count is accurate
+    setTimeout(() => io.emit('server:stats', { total: io.sockets.size }), 100);
     console.log(`[-] ${socket.id} disconnected`);
   });
 

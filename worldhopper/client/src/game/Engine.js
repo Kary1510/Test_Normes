@@ -7,17 +7,21 @@ import { ParticleSystem } from './Particles.js';
 import { WORLDS, EV }     from './constants.js';
 
 export class GameEngine {
-  constructor({ canvas, skinId, worldId, socket, onCollect, onWorldChange, onToast }) {
-    this.canvas          = canvas;
-    this.socket          = socket;
-    this.onCollect       = onCollect;
-    this.onWorldChange   = onWorldChange;
-    this.onToast         = onToast;
-    this._collectedKeys  = new Set();
-    this._remotePlayers  = new Map();
-    this._raf            = null;
-    this._t              = 0;
-    this._lastEmit       = 0;
+  constructor({ canvas, skinId, worldId, socket, onCollect, onWorldChange, onToast, onItemProgress, onWorldComplete }) {
+    this.canvas           = canvas;
+    this.socket           = socket;
+    this.onCollect        = onCollect;
+    this.onWorldChange    = onWorldChange;
+    this.onToast          = onToast;
+    this.onItemProgress   = onItemProgress;
+    this.onWorldComplete  = onWorldComplete;
+    this._collectedKeys   = new Set();
+    this._remotePlayers   = new Map();
+    this._raf             = null;
+    this._t               = 0;
+    this._lastEmit        = 0;
+    this._worldItemTotal      = 0;
+    this._worldItemCollected  = 0;
 
     // ── Renderer ─────────────────────────────────────────────────────────────
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -42,11 +46,24 @@ export class GameEngine {
     this._loop();
   }
 
+  _countWorldItems(worldId) {
+    let count = 0;
+    for (const row of WORLDS[worldId].tilemap) {
+      for (const ch of row) if (ch === '4') count++;
+    }
+    return count;
+  }
+
   _loadWorld(worldId) {
-    this._currentWorldId = worldId;
+    this._currentWorldId         = worldId;
+    this._worldItemTotal         = this._countWorldItems(worldId);
+    this._worldItemCollected     = 0;
     this.world.load(worldId);
     this.items.load(worldId, this._collectedKeys);
     this.particles.loadAmbient(worldId);
+
+    // Fire initial progress so HUD shows "0/N" immediately
+    this.onItemProgress?.(worldId, 0, this._worldItemTotal);
 
     // Spawn player at first open floor tile
     const map = WORLDS[worldId].tilemap;
@@ -135,7 +152,7 @@ export class GameEngine {
       this.socket.emit(EV.WORLD, { worldId });
       this.socket.emit(EV.JOIN,  { worldId, skinId: this.player.skinId });
     }
-    this.onToast?.(`🌀 Bienvenue en ${WORLDS[worldId].label} !`);
+    // onWorldChange shows the toast in App.jsx — no duplicate here
   }
 
   _loop = () => {
@@ -156,11 +173,15 @@ export class GameEngine {
         const ok  = this.items.collect(hit.key);
         if (ok) {
           this._collectedKeys.add(hit.key);
+          this._worldItemCollected++;
           const val   = WORLDS[this._currentWorldId].itemValue;
           const color = WORLDS[this._currentWorldId].ic;
-          // Particle burst at item position
           if (pos) this.particles.burst(pos.x, pos.y, pos.z, color);
           this.onCollect?.(hit.key, val);
+          this.onItemProgress?.(this._currentWorldId, this._worldItemCollected, this._worldItemTotal);
+          if (this._worldItemCollected >= this._worldItemTotal) {
+            this.onWorldComplete?.(this._currentWorldId);
+          }
           if (this.socket) this.socket.emit(EV.COLLECT, { itemKey: hit.key });
         }
       } else if (hit.type === 'portal') {
