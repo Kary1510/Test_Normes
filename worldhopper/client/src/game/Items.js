@@ -47,27 +47,40 @@ export class ItemsManager {
   }
 
   _addItem(key, x, z, itemColor, glowColor, tex) {
-    // Emoji sprite
+    // Glowing orb — primary visual, visible from across the map
+    const orbGeo = new THREE.SphereGeometry(0.24, 12, 12);
+    const orbMat = new THREE.MeshStandardMaterial({
+      color: itemColor,
+      emissive: itemColor,
+      emissiveIntensity: 1.8,
+      roughness: 0.2,
+      metalness: 0.6,
+    });
+    const orb = new THREE.Mesh(orbGeo, orbMat);
+    orb.position.set(x, 1.0, z);
+    this.scene.add(orb);
+
+    // Emoji sprite above orb (larger than before)
     const mat  = new THREE.SpriteMaterial({ map: tex, transparent: true });
     const mesh = new THREE.Sprite(mat);
-    mesh.scale.set(0.58, 0.58, 0.58);
-    mesh.position.set(x, 1.0, z);
+    mesh.scale.set(1.1, 1.1, 1.1);
+    mesh.position.set(x, 1.72, z);
     this.scene.add(mesh);
 
     // Ground glow ring
-    const ringGeo = new THREE.TorusGeometry(0.28, 0.028, 6, 24);
-    const ringMat = new THREE.MeshBasicMaterial({ color: itemColor, transparent: true, opacity: 0.6 });
+    const ringGeo = new THREE.TorusGeometry(0.34, 0.04, 6, 24);
+    const ringMat = new THREE.MeshBasicMaterial({ color: itemColor, transparent: true, opacity: 0.7 });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(x, 0.02, z);
     this.scene.add(ring);
 
-    // Point light
-    const light = new THREE.PointLight(itemColor, 0.9, 1.8);
+    // Bright point light — wide range so it draws the eye from a distance
+    const light = new THREE.PointLight(itemColor, 5.0, 8.0);
     light.position.set(x, 1.0, z);
     this.scene.add(light);
 
-    this.items.set(key, { mesh, ring, ringMat, light, collected: false, baseY: 1.0 });
+    this.items.set(key, { mesh, orb, orbMat, ring, ringMat, light, collected: false, baseY: 1.0 });
   }
 
   _addPortal(x, z, color) {
@@ -124,10 +137,13 @@ export class ItemsManager {
   update(t) {
     this._t = t;
 
-    // Animate items — float + ring pulse
+    // Animate items — float + orb glow pulse + ring pulse
     for (const [, item] of this.items) {
       if (!item.collected) {
-        item.mesh.position.y = item.baseY + Math.sin(t * 2.2) * 0.13;
+        const floatY = item.baseY + Math.sin(t * 2.2) * 0.13;
+        item.orb.position.y = floatY;
+        item.mesh.position.y = floatY + 0.72;
+        item.orbMat.emissiveIntensity = 1.5 + Math.sin(t * 3) * 0.6;
         item.ringMat.opacity = 0.35 + Math.sin(t * 3) * 0.25;
         item.ring.scale.setScalar(0.9 + Math.sin(t * 2) * 0.1);
       }
@@ -157,9 +173,9 @@ export class ItemsManager {
   checkProximity(px, pz) {
     for (const [key, item] of this.items) {
       if (item.collected) continue;
-      const dx = item.mesh.position.x - px;
-      const dz = item.mesh.position.z - pz;
-      if (Math.sqrt(dx * dx + dz * dz) < 0.65) return { type: 'item', key };
+      const dx = item.orb.position.x - px;
+      const dz = item.orb.position.z - pz;
+      if (Math.sqrt(dx * dx + dz * dz) < 0.75) return { type: 'item', key };
     }
     if (this.portal) {
       const { x, z } = this.portal.userData;
@@ -175,9 +191,12 @@ export class ItemsManager {
     if (!item || item.collected) return false;
     item.collected = true;
     this.scene.remove(item.mesh);
+    this.scene.remove(item.orb);
     this.scene.remove(item.ring);
     this.scene.remove(item.light);
     item.mesh.material.dispose();
+    item.orbMat.dispose();
+    item.orb.geometry.dispose();
     item.ringMat.dispose();
     return true;
   }
@@ -185,16 +204,19 @@ export class ItemsManager {
   getItemPosition(key) {
     const item = this.items.get(key);
     if (!item) return null;
-    return item.mesh.position.clone();
+    return item.orb.position.clone();
   }
 
   clear() {
     for (const [, item] of this.items) {
       this.scene.remove(item.mesh);
+      this.scene.remove(item.orb);
       this.scene.remove(item.ring);
       this.scene.remove(item.light);
       if (item.mesh.material.map) item.mesh.material.map.dispose();
       item.mesh.material.dispose();
+      item.orbMat.dispose();
+      item.orb.geometry.dispose();
       item.ringMat.dispose();
     }
     this.items.clear();
