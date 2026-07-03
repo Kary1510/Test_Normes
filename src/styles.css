@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-slate-950 text-slate-100 antialiased;
+    background-image:
+      radial-gradient(1100px 550px at 85% -10%, rgba(251, 191, 36, 0.08), transparent 60%),
+      radial-gradient(900px 500px at -10% 25%, rgba(16, 185, 129, 0.06), transparent 55%),
+      radial-gradient(700px 420px at 50% 110%, rgba(99, 102, 241, 0.09), transparent 60%);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    @apply bg-amber-400/30;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium
+      bg-slate-800/90 text-slate-100 border border-slate-700 shadow-sm transition
+      hover:bg-slate-700 hover:border-slate-600 active:scale-[.98]
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400
+      disabled:opacity-40 disabled:pointer-events-none;
+  }
+
+  .btn-primary {
+    @apply bg-amber-400 text-slate-950 border-amber-300 font-semibold shadow-lg shadow-amber-500/20
+      hover:bg-amber-300 hover:border-amber-200;
+  }
+
+  .btn-success {
+    @apply bg-emerald-500 text-slate-950 border-emerald-400 font-semibold shadow-lg shadow-emerald-500/20
+      hover:bg-emerald-400 hover:border-emerald-300;
+  }
+
+  .btn-danger {
+    @apply bg-rose-500/10 text-rose-300 border-rose-500/40 hover:bg-rose-500/20 hover:border-rose-400/60;
+  }
+
+  .btn-ghost {
+    @apply bg-transparent border-transparent shadow-none hover:bg-slate-800/70;
+  }
+
+  .input {
+    @apply w-full px-3 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 text-slate-100 text-sm
+      placeholder:text-slate-500 transition
+      focus:outline-none focus:ring-2 focus:ring-amber-400/70 focus:border-amber-400/50;
+  }
+
+  .card {
+    @apply bg-slate-900/75 border border-slate-800 rounded-2xl shadow-xl shadow-black/30 backdrop-blur-sm;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium
+      bg-slate-800/90 border border-slate-700 text-slate-300;
+  }
+
+  .label {
+    @apply block text-xs font-semibold uppercase tracking-wider text-slate-400;
+  }
+}
